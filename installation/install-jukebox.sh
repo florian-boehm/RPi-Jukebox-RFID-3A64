@@ -11,20 +11,30 @@
 export LC_ALL=C
 
 # Set Repo variables if not specified when calling the script
+TESTING={TESTING:-false}
 GIT_USER=${GIT_USER:-"MiczFlor"}
 GIT_BRANCH=${GIT_BRANCH:-"future3/main"}
+GIT_REPO_NAME=${GIT_REPO_NAME:-"RPi-Jukebox-RFID"}
 
 # Constants
-GIT_REPO_NAME="RPi-Jukebox-RFID"
 GIT_URL="https://github.com/${GIT_USER}/${GIT_REPO_NAME}"
 echo GIT_BRANCH $GIT_BRANCH
 echo GIT_URL $GIT_URL
+
+if [ $TESTING ]; then
+  echo "Testing mode enabled"
+fi
 
 CURRENT_USER="${SUDO_USER:-$(whoami)}"
 CURRENT_USER_GROUP=$(id -gn "$CURRENT_USER")
 HOME_PATH=$(getent passwd "$CURRENT_USER" | cut -d: -f6)
 
-INSTALLATION_PATH="${HOME_PATH}/${GIT_REPO_NAME}"
+if [ $TESTING ]; then
+  INSTALLATION_PATH="${PWD}"
+else
+  INSTALLATION_PATH="${HOME_PATH}/${GIT_REPO_NAME}"
+fi
+
 INSTALL_ID=$(date +%s)
 INSTALLATION_LOGFILE="${HOME_PATH}/INSTALL-${INSTALL_ID}.log"
 
@@ -94,7 +104,7 @@ _check_os_type() {
 
   print_lc "\nChecking OS type '$os_type'"
 
-  if [[ $os_type == "armv7l" || $os_type == "armv6l" ]]; then
+  if [[ $os_type == "armv7l" || $os_type == "armv6l" || $os_type == "aarch64" ]]; then
     print_lc "  ... OK!\n"
   else
     print_lc "ERROR: Only 32 bit operating systems supported. Please use a 32bit version of RaspianOS!"
@@ -109,7 +119,9 @@ _download_jukebox_source() {
   print_lc "Download Source: ${GIT_URL}/${GIT_BRANCH}"
 
   cd "${HOME_PATH}" || exit_on_error "ERROR: Changing to home dir failed."
-  wget -qO- "${GIT_URL}/tarball/${GIT_BRANCH}" | tar xz
+  type "wget" || exit_on_error "ERROR: wget is not installed."
+  type "tar" || exit_on_error "ERROR: tar is not installed."  
+  wget -qO- "${GIT_URL}/tarball/${GIT_BRANCH}" | tar xz  
   # Use case insensitive search/sed because user names in Git Hub are case insensitive
   local git_repo_download=$(find . -maxdepth 1 -type d -iname "${GIT_USER}-${GIT_REPO_NAME}-*")
   log "GIT REPO DOWNLOAD = $git_repo_download"
@@ -142,14 +154,19 @@ _load_sources() {
 _setup_logging
 
 ### CHECK PREREQUISITE
-_check_os_type
+if [ ! $TESTING ]; then
+  _check_os_type
+fi
 
 ### RUN INSTALLATION
 log "Current User: $CURRENT_USER"
 log "User home dir: $HOME_PATH"
 
-_download_jukebox_source
-cd "${INSTALLATION_PATH}" || exit_on_error "ERROR: Changing to install dir failed."
+if [ ! $TESTING ]; then
+  _download_jukebox_source
+  cd "${INSTALLATION_PATH}" || exit_on_error "ERROR: Changing to install dir failed."
+fi
+
 _load_sources
 
 welcome
