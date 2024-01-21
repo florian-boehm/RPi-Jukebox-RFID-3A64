@@ -84,7 +84,7 @@ _jukebox_webapp_build() {
 
 _jukebox_webapp_download() {
   print_lc "  Downloading Web App"
-  local jukebox_version=$(python "${INSTALLATION_PATH}/src/jukebox/jukebox/version.py")
+  local jukebox_version=$(python3 "${INSTALLATION_PATH}/src/jukebox/jukebox/version.py")
   local git_head_hash=$(git -C "${INSTALLATION_PATH}" rev-parse --verify --quiet HEAD)
   local git_head_hash_short=${git_head_hash:0:10}
   local tar_filename="webapp-build.tar.gz"
