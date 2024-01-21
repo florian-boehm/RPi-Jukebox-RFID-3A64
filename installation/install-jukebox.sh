@@ -11,7 +11,7 @@
 export LC_ALL=C
 
 # Set Repo variables if not specified when calling the script
-TESTING={TESTING:-false}
+TESTING=${TESTING:-false}
 GIT_USER=${GIT_USER:-"MiczFlor"}
 GIT_BRANCH=${GIT_BRANCH:-"future3/main"}
 GIT_REPO_NAME=${GIT_REPO_NAME:-"RPi-Jukebox-RFID"}
@@ -21,7 +21,7 @@ GIT_URL="https://github.com/${GIT_USER}/${GIT_REPO_NAME}"
 echo GIT_BRANCH $GIT_BRANCH
 echo GIT_URL $GIT_URL
 
-if [ $TESTING ]; then
+if $TESTING ; then
   echo "Testing mode enabled"
 fi
 
@@ -29,7 +29,7 @@ CURRENT_USER="${SUDO_USER:-$(whoami)}"
 CURRENT_USER_GROUP=$(id -gn "$CURRENT_USER")
 HOME_PATH=$(getent passwd "$CURRENT_USER" | cut -d: -f6)
 
-if [ $TESTING ]; then
+if $TESTING ; then
   INSTALLATION_PATH="${PWD}"
 else
   INSTALLATION_PATH="${HOME_PATH}/${GIT_REPO_NAME}"
@@ -154,7 +154,7 @@ _load_sources() {
 _setup_logging
 
 ### CHECK PREREQUISITE
-if [ ! $TESTING ]; then
+if ! $TESTING ; then
   _check_os_type
 fi
 
@@ -162,7 +162,7 @@ fi
 log "Current User: $CURRENT_USER"
 log "User home dir: $HOME_PATH"
 
-if [ ! $TESTING ]; then
+if ! $TESTING ; then
   _download_jukebox_source
   cd "${INSTALLATION_PATH}" || exit_on_error "ERROR: Changing to install dir failed."
 fi
