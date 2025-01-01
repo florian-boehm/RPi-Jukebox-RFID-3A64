@@ -151,11 +151,13 @@ _jukebox_webapp_check() {
 }
 
 _run_setup_jukebox_webapp() {
-    if [[ "$ENABLE_WEBAPP_PROD_DOWNLOAD" == true || "$ENABLE_WEBAPP_PROD_DOWNLOAD" == "release-only" ]] ; then
-        _jukebox_webapp_download
-    else
-        _jukebox_webapp_install_node
-        _jukebox_webapp_build
+    if ! $TESTING ; then
+        if [[ "$ENABLE_WEBAPP_PROD_DOWNLOAD" == true || "$ENABLE_WEBAPP_PROD_DOWNLOAD" == "release-only" ]] ; then
+            _jukebox_webapp_download
+        else
+            _jukebox_webapp_install_node
+            _jukebox_webapp_build
+        fi
     fi
     _jukebox_webapp_register_as_system_service_with_nginx
     _jukebox_webapp_check
