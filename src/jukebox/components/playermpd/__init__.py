@@ -87,7 +87,7 @@ import threading
 import logging
 import time
 import functools
-from slugify import slugify
+from pathlib import Path
 import components.player
 import jukebox.cfghandler
 import jukebox.utils as utils
@@ -156,10 +156,33 @@ class PlayerMPD:
         self.second_swipe_action = None
         self.decode_2nd_swipe_option()
 
-        self.mpd_client = mpd.MPDClient()
+        self.end_of_playlist_next_action = utils.get_config_action(cfg,
+                                                                   'playermpd',
+                                                                   'end_of_playlist_next_action',
+                                                                   'none',
+                                                                   {'rewind': self.rewind,
+                                                                    'stop': self.stop,
+                                                                    'none': lambda: None},
+                                                                   logger)
+        self.stopped_prev_action = utils.get_config_action(cfg,
+                                                           'playermpd',
+                                                           'stopped_prev_action',
+                                                           'prev',
+                                                           {'rewind': self.rewind,
+                                                            'prev': self._prev_in_stopped_state,
+                                                            'none': lambda: None},
+                                                           logger)
+        self.stopped_next_action = utils.get_config_action(cfg,
+                                                          'playermpd',
+                                                          'stopped_next_action',
+                                                          'next',
+                                                          {'rewind': self.rewind,
+                                                           'next': self._next_in_stopped_state,
+                                                           'none': lambda: None},
+                                                          logger)
 
-        coverart_cache_path = cfg.getn('webapp', 'coverart_cache_path')
-        self.coverart_cache_manager = CoverartCacheManager(os.path.expanduser(coverart_cache_path))
+        self.mpd_client = mpd.MPDClient()
+        self.coverart_cache_manager = CoverartCacheManager()
 
         # The timeout refer to the low-level socket time-out
         # If these are too short and the response is not fast enough (due to the PI being busy),
@@ -280,6 +303,14 @@ class PlayerMPD:
             pass
         publishing.get_publisher().send('playerstatus', self.mpd_status)
 
+    # MPD can play absolute paths but can find songs in its database only by relative path
+    # This function aims to prepare the song_url accordingly
+    def harmonize_mpd_url(self, song_url):
+        _music_library_path_absolute = os.path.expanduser(components.player.get_music_library_path())
+        song_url = song_url.replace(f'{_music_library_path_absolute}/', '')
+
+        return song_url
+
     @plugs.tag
     def get_player_type_and_version(self):
         with self.mpd_lock:
@@ -321,15 +352,48 @@ class PlayerMPD:
     @plugs.tag
     def prev(self):
         logger.debug("Prev")
+        if self.mpd_status['state'] == 'stop':
+            logger.debug('Player is stopped, calling stopped_prev_action')
+            return self.stopped_prev_action()
+        try:
+            with self.mpd_lock:
+                self.mpd_client.previous()
+        except mpd.base.CommandError:
+            # This shouldn't happen in reality, but we still catch
+            # this error to avoid crashing the player thread:
+            logger.warning('Failed to go to previous song, ignoring')
+
+    def _prev_in_stopped_state(self):
         with self.mpd_lock:
-            self.mpd_client.previous()
+            self.mpd_client.play(max(0, int(self.mpd_status['pos']) - 1))
 
     @plugs.tag
     def next(self):
         """Play next track in current playlist"""
         logger.debug("Next")
+        if self.mpd_status['state'] == 'stop':
+            logger.debug('Player is stopped, calling stopped_next_action')
+            return self.stopped_next_action()
+        playlist_len = int(self.mpd_status.get('playlistlength', -1))
+        current_pos = int(self.mpd_status.get('pos', 0))
+        if current_pos == playlist_len - 1:
+            logger.debug(f'next() called during last song ({current_pos}) of '
+                         f'playlist (len={playlist_len}), running end_of_playlist_next_action.')
+            return self.end_of_playlist_next_action()
+        try:
+            with self.mpd_lock:
+                self.mpd_client.next()
+        except mpd.base.CommandError:
+            # This shouldn't happen in reality, but we still catch
+            # this error to avoid crashing the player thread:
+            logger.warning('Failed to go to next song, ignoring')
+
+    def _next_in_stopped_state(self):
+        pos = int(self.mpd_status['pos']) + 1
+        if pos > int(self.mpd_status['playlistlength']) - 1:
+            return self.end_of_playlist_next_action()
         with self.mpd_lock:
-            self.mpd_client.next()
+            self.mpd_client.play(pos)
 
     @plugs.tag
     def seek(self, new_time):
@@ -344,7 +408,7 @@ class PlayerMPD:
         Note: Will not re-read folder config, but leave settings untouched"""
         logger.debug("Rewind")
         with self.mpd_lock:
-            self.mpd_client.play(1)
+            self.mpd_client.play(0)
 
     @plugs.tag
     def replay(self):
@@ -515,46 +579,24 @@ class PlayerMPD:
 
     @plugs.tag
     def get_single_coverart(self, song_url):
-        """
-        Saves the album art image to a cache and returns the filename.
-        """
-        base_filename = slugify(song_url)
+        mp3_file_path = Path(components.player.get_music_library_path(), song_url).expanduser()
+        cache_filename = self.coverart_cache_manager.get_cache_filename(mp3_file_path)
 
-        try:
-            metadata_list = self.mpd_client.listallinfo(song_url)
-            metadata = {}
-            if metadata_list:
-                metadata = metadata_list[0]
-
-            if 'albumartist' in metadata and 'album' in metadata:
-                base_filename = slugify(f"{metadata['albumartist']}-{metadata['album']}")
-
-            cache_filename = self.coverart_cache_manager.find_file_by_hash(base_filename)
-
-            if cache_filename:
-                return cache_filename
-
-            # Cache file does not exist
-            # Fetch cover art binary
-            album_art_data = self.mpd_client.readpicture(song_url)
-
-            # Save to cache
-            cache_filename = self.coverart_cache_manager.save_to_cache(base_filename, album_art_data)
-
-            return cache_filename
-
-        except mpd.base.CommandError as e:
-            logger.error(f"{e.__class__.__qualname__}: {e} at uri {song_url}")
-        except Exception as e:
-            logger.error(f"{e.__class__.__qualname__}: {e} at uri {song_url}")
-
-        return ""
+        return cache_filename
 
     @plugs.tag
     def get_album_coverart(self, albumartist: str, album: str):
         song_list = self.list_songs_by_artist_and_album(albumartist, album)
 
         return self.get_single_coverart(song_list[0]['file'])
+
+    @plugs.tag
+    def flush_coverart_cache(self):
+        """
+        Deletes the Cover Art Cache
+        """
+
+        return self.coverart_cache_manager.flush_cache()
 
     @plugs.tag
     def get_folder_content(self, folder: str):
@@ -667,10 +709,7 @@ class PlayerMPD:
 
     @plugs.tag
     def get_song_by_url(self, song_url):
-        # MPD can play absolute paths but can find songs in its database only by relative path
-        # In certain situations, `song_url` can be an absolute path. Then, it will be trimed to be relative
-        _music_library_path_absolute = os.path.expanduser(components.player.get_music_library_path())
-        song_url = song_url.replace(f'{_music_library_path_absolute}/', '')
+        song_url = self.harmonize_mpd_url(song_url)
 
         with self.mpd_lock:
             song = self.mpd_retry_with_mutex(self.mpd_client.find, 'file', song_url)

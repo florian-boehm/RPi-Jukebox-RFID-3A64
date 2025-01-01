@@ -17,5 +17,6 @@ install() {
   setup_rfid_reader
   optimize_boot_time
   setup_autohotspot
+  setup_postinstall
   cleanup
 }
