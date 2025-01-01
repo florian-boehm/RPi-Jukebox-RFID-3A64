@@ -388,7 +388,11 @@ verify_optional_service_enablement() {
     elif [[ "${actual_enablement}" == "static" ]]; then
         log "  INFO: optional service ${option}${service} is set static."
     elif [[ ! "${actual_enablement}" == "${desired_enablement}" ]]; then
-        exit_on_error "ERROR: service ${option}${service} is not ${desired_enablement} (state: ${actual_enablement})."
+        if [[ "${actual_enablement}" == "masked" ]] && [[ "${desired_enablement}" == "disabled" ]]; then
+            :
+        else
+            exit_on_error "ERROR: service ${option}${service} is not ${desired_enablement} (state: ${actual_enablement})."
+        fi
     fi
     log "  CHECK"
 }
