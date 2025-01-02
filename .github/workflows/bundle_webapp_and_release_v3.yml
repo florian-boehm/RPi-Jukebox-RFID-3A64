@@ -5,6 +5,7 @@ on:
     branches:
       - 'future3/main'
       - 'future3/develop'
+      - 'feature/support-for-64bit'
 
 jobs:
 
