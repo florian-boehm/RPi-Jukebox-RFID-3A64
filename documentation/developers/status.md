@@ -197,7 +197,7 @@ Topics marked _in progress_ are already in the process of implementation by comm
 
 ### Others
 
-- [ ] MQTT
+- [x] MQTT
 - [ ] Record and Playback using a Mic
 - [ ] Dot Matrix Displays
 
